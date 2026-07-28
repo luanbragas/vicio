@@ -1,0 +1,47 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function isUser(uid) {
+      return request.auth.uid == uid;
+    }
+
+    function isParticipante(desafioId) {
+      return request.auth.uid in get(/databases/$(database)/documents/desafios/$(desafioId)).data.participantes;
+    }
+
+    // Usuários
+    match /users/{userId} {
+      allow read: if isAuth();
+      allow write: if isUser(userId);
+    }
+
+    // Desafios
+    match /desafios/{desafioId} {
+      allow read: if isAuth() && isParticipante(desafioId);
+      allow create: if isAuth();
+      allow update: if isAuth() && isParticipante(desafioId);
+
+      // Check-ins
+      match /checkins/{checkinId} {
+        allow read: if isAuth() && isParticipante(desafioId);
+        allow create: if isAuth() && isParticipante(desafioId);
+        allow update: if isAuth() && isParticipante(desafioId);
+      }
+    }
+
+    // Convites
+    match /convites/{conviteId} {
+      allow read: if isAuth() && (
+        resource.data.de == request.auth.uid ||
+        resource.data.para_email == request.auth.token.email
+      );
+      allow create: if isAuth();
+      allow update: if isAuth() && resource.data.para_email == request.auth.token.email;
+    }
+  }
+}
