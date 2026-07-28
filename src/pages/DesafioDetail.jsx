@@ -36,7 +36,7 @@ export default function DesafioDetail() {
   const { user } = useStore()
   const [desafio, setDesafio] = useState(null)
   const [checkins, setCheckins] = useState([])
-  const [rival, setRival] = useState(null)
+  const [outrosInfo, setOutrosInfo] = useState({})
   const [showCheckin, setShowCheckin] = useState(false)
   const [showAprovar, setShowAprovar] = useState(null)
   const [checkinStep, setCheckinStep] = useState('timer') // 'timer' | 'camera'
@@ -57,12 +57,26 @@ export default function DesafioDetail() {
 
   useEffect(() => {
     if (!desafio || !user) return
-    const rivalUid = desafio.participantes?.find(p => p !== user.uid)
-    if (rivalUid) getUser(rivalUid).then(setRival)
+    const outrosUids = (desafio.participantes || []).filter(p => p !== user.uid)
+    Promise.all(outrosUids.map(uid => getUser(uid))).then(users => {
+      const map = {}
+      users.forEach(u => u && (map[u.id] = u))
+      setOutrosInfo(map)
+    })
   }, [desafio, user])
 
   const myStreak = desafio?.streak_atual_por_usuario?.[user?.uid] || 0
-  const rivalStreak = rival ? (desafio?.streak_atual_por_usuario?.[rival.id] || 0) : 0
+  const rankingParticipantes = (desafio?.participantes || []).map(uid => {
+    const isMe = uid === user?.uid
+    const info = outrosInfo[uid]
+    return {
+      uid,
+      isMe,
+      nome: isMe ? 'Você' : (info?.nome || 'Rival'),
+      foto: info?.foto_perfil,
+      streak: desafio?.streak_atual_por_usuario?.[uid] || 0,
+    }
+  }).sort((a, b) => b.streak - a.streak)
 
   const pendentesParaMim = checkins.filter(
     c => c.userId !== user?.uid && c.status === 'pendente'
@@ -198,17 +212,32 @@ export default function DesafioDetail() {
             </motion.button>
           </div>
 
-          {/* VS Card */}
-          <div style={{
-            display: 'grid', gridTemplateColumns: '1fr auto 1fr',
-            alignItems: 'center', gap: 12,
-          }}>
-            <PlayerStreak streak={myStreak} nome="Você" src={null} isMe />
-            <div style={{ textAlign: 'center' }}>
-              <FlameIcon streak={Math.max(myStreak, rivalStreak)} size={32} />
-              <p style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 700, marginTop: 4 }}>VS</p>
-            </div>
-            <PlayerStreak streak={rivalStreak} nome={rival?.nome || 'Rival'} src={rival?.foto_perfil} />
+          {/* Ranking dos participantes */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {rankingParticipantes.map((p, i) => (
+              <div
+                key={p.uid}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '8px 10px', borderRadius: 12,
+                  background: p.isMe ? 'rgba(255,77,0,0.08)' : 'var(--bg2)',
+                  border: '1px solid',
+                  borderColor: p.isMe ? 'rgba(255,77,0,0.2)' : 'var(--border)',
+                }}
+              >
+                <span style={{ fontSize: 12, color: 'var(--text3)', fontWeight: 700, width: 16, textAlign: 'center' }}>
+                  {i + 1}º
+                </span>
+                <Avatar src={p.foto} nome={p.isMe ? undefined : p.nome} size={32} />
+                <span style={{ fontSize: 14, fontWeight: 700, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {p.nome}
+                </span>
+                <span style={{ fontSize: 18, fontWeight: 900 }} className={p.isMe ? 'gradient-text' : ''}>
+                  {p.streak}
+                </span>
+                <FlameIcon streak={p.streak} size={18} animate={false} />
+              </div>
+            ))}
           </div>
 
           {desafio.aposta && (
@@ -238,7 +267,7 @@ export default function DesafioDetail() {
               textAlign: 'center', color: 'var(--yellow)', fontWeight: 700, fontSize: 14,
             }}>
               <Clock size={18} style={{ marginRight: 8, verticalAlign: 'middle' }} />
-              Aguardando o rival aceitar...
+              Aguardando os demais aceitarem...
             </div>
           )}
           {!fezCheckinHoje && desafio.status === 'ativo' && (
@@ -287,6 +316,9 @@ export default function DesafioDetail() {
                 className="card"
                 style={{ marginBottom: 8, border: '1px solid rgba(245,158,11,0.25)' }}
               >
+                <p style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>
+                  {outrosInfo[c.userId]?.nome || 'Rival'}
+                </p>
                 {c.foto_url && (
                   <img
                     src={c.foto_url}
@@ -326,7 +358,7 @@ export default function DesafioDetail() {
             </p>
           )}
           {checkins.map((c, i) => (
-            <CheckinItem key={c.id} checkin={c} uid={user?.uid} rival={rival} index={i} />
+            <CheckinItem key={c.id} checkin={c} uid={user?.uid} outrosInfo={outrosInfo} index={i} />
           ))}
         </div>
       </div>
@@ -478,24 +510,9 @@ export default function DesafioDetail() {
   )
 }
 
-function PlayerStreak({ streak, nome, src, isMe }) {
-  return (
-    <div style={{ textAlign: isMe ? 'left' : 'right' }}>
-      <div style={{
-        fontSize: 48, fontWeight: 900, lineHeight: 1,
-        ...(isMe
-          ? { background: 'linear-gradient(135deg, var(--accent), var(--accent2))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }
-          : { color: 'var(--text2)' })
-      }}>
-        {streak}
-      </div>
-      <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 4 }}>{nome}</div>
-    </div>
-  )
-}
-
-function CheckinItem({ checkin, uid, rival, index }) {
+function CheckinItem({ checkin, uid, outrosInfo, index }) {
   const isMine = checkin.userId === uid
+  const autor = outrosInfo?.[checkin.userId]
   const STATUS_COLOR = { aprovado: 'var(--green)', reprovado: 'var(--red)', pendente: 'var(--yellow)' }
   const STATUS_ICON = {
     aprovado: <CheckCircle2 size={14} color="var(--green)" />,
@@ -523,10 +540,10 @@ function CheckinItem({ checkin, uid, rival, index }) {
           fontSize: 14, fontWeight: 700, color: '#fff',
           flexShrink: 0,
         }}>
-          {isMine ? 'V' : (rival?.nome?.charAt(0) || 'R')}
+          {isMine ? 'V' : (autor?.nome?.charAt(0) || 'R')}
         </div>
         <div style={{ flex: 1 }}>
-          <p style={{ fontSize: 13, fontWeight: 700 }}>{isMine ? 'Você' : (rival?.nome || 'Rival')}</p>
+          <p style={{ fontSize: 13, fontWeight: 700 }}>{isMine ? 'Você' : (autor?.nome || 'Rival')}</p>
           <p style={{ fontSize: 11, color: 'var(--text3)' }}>{dataStr} · {checkin.duracao_minutos}min</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>

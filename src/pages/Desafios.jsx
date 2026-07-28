@@ -107,10 +107,12 @@ export default function Desafios() {
                 {label}
               </h2>
               {list.map((d, i) => {
-                const rivalUid = d.participantes?.find(p => p !== user?.uid)
-                const rival = amigosInfo[rivalUid]
+                const rivalUids = (d.participantes || []).filter(p => p !== user?.uid)
+                const rivais = rivalUids.map(uid => amigosInfo[uid]).filter(Boolean)
                 const myStreak = d.streak_atual_por_usuario?.[user?.uid] || 0
-                const rivalStreak = d.streak_atual_por_usuario?.[rivalUid] || 0
+                const nomesRivais = rivais.length
+                  ? rivais.map(r => r.nome).join(', ')
+                  : 'Rival'
 
                 return (
                   <motion.div
@@ -124,13 +126,19 @@ export default function Desafios() {
                     onClick={() => navigate(`/desafio/${d.id}`)}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <Avatar src={rival?.foto_perfil} nome={rival?.nome} size={44} />
+                      <div style={{ display: 'flex', flexShrink: 0 }}>
+                        {(rivais.length ? rivais : [null]).slice(0, 3).map((r, idx) => (
+                          <div key={r?.id || idx} style={{ marginLeft: idx === 0 ? 0 : -14 }}>
+                            <Avatar src={r?.foto_perfil} nome={r?.nome} size={44} border="var(--bg2)" />
+                          </div>
+                        ))}
+                      </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <p style={{ fontWeight: 800, fontSize: 15, marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {d.titulo}
                         </p>
-                        <p style={{ fontSize: 12, color: 'var(--text3)' }}>
-                          vs {rival?.nome || 'Rival'}
+                        <p style={{ fontSize: 12, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          vs {nomesRivais}
                         </p>
                       </div>
                       {d.status === 'pendente' && !d.aceitos?.includes(user?.uid) ? (
@@ -222,8 +230,9 @@ export default function Desafios() {
 function NovoDesafioModal({ open, onClose, user, userProfile }) {
   const [titulo, setTitulo] = useState('')
   const [amigos, setAmigos] = useState([])
-  const [selectedRivalId, setSelectedRivalId] = useState(null)
+  const [selectedRivalIds, setSelectedRivalIds] = useState([])
   const [emailRival, setEmailRival] = useState('')
+  const [emailsRival, setEmailsRival] = useState([])
   const [duracao, setDuracao] = useState(30)
   const [aposta, setAposta] = useState('')
   const [loading, setLoading] = useState(false)
@@ -236,30 +245,54 @@ function NovoDesafioModal({ open, onClose, user, userProfile }) {
     })
   }, [open, userProfile])
 
+  function toggleRival(id) {
+    setSelectedRivalIds(prev =>
+      prev.includes(id) ? prev.filter(r => r !== id) : [...prev, id]
+    )
+  }
+
+  function adicionarEmail() {
+    const email = emailRival.trim().toLowerCase()
+    if (!email) return
+    if (emailsRival.includes(email)) { setEmailRival(''); return }
+    setEmailsRival(prev => [...prev, email])
+    setEmailRival('')
+  }
+
+  function removerEmail(email) {
+    setEmailsRival(prev => prev.filter(e => e !== email))
+  }
+
   async function handleCriar() {
     if (!titulo.trim()) return toast.error('Digite o título do desafio')
-    if (!selectedRivalId && !emailRival.trim()) return toast.error('Escolha um amigo ou digite um e-mail')
+    const emailPendente = emailRival.trim().toLowerCase()
+    const emailsParaResolver = [...emailsRival, ...(emailPendente ? [emailPendente] : [])]
+    if (!selectedRivalIds.length && !emailsParaResolver.length) {
+      return toast.error('Escolha ao menos um amigo ou digite um e-mail')
+    }
     setLoading(true)
     try {
-      let rivalId = selectedRivalId
-      if (!rivalId) {
-        const rival = await getUserByEmail(emailRival.trim().toLowerCase())
-        if (!rival) return toast.error('Usuário não encontrado')
+      const idsPorEmail = []
+      for (const email of emailsParaResolver) {
+        const rival = await getUserByEmail(email)
+        if (!rival) return toast.error(`Usuário não encontrado: ${email}`)
         if (rival.id === user.uid) return toast.error('Não pode desafiar a si mesmo')
-        rivalId = rival.id
+        idsPorEmail.push(rival.id)
       }
+
+      const rivalIds = [...new Set([...selectedRivalIds, ...idsPorEmail])]
 
       await criarDesafio({
         titulo: titulo.trim(),
-        participantes: [user.uid, rivalId],
+        participantes: [user.uid, ...rivalIds],
         criado_por: user.uid,
         aceitos: [user.uid],
         duracao_dias: duracao === 0 ? null : duracao,
         aposta: aposta.trim() || null,
       })
-      toast.success('Desafio criado! Aguardando o rival aceitar.')
+      toast.success('Desafio criado! Aguardando os rivais aceitarem.')
       onClose()
-      setTitulo(''); setSelectedRivalId(null); setEmailRival(''); setAposta('')
+      setTitulo(''); setSelectedRivalIds([]); setEmailRival(''); setEmailsRival([]); setAposta('')
     } catch (e) {
       toast.error('Erro ao criar desafio')
     } finally {
@@ -303,7 +336,7 @@ function NovoDesafioModal({ open, onClose, user, userProfile }) {
 
         <div>
           <label style={{ fontSize: 12, color: 'var(--text3)', fontWeight: 600, marginBottom: 8, display: 'block' }}>
-            RIVAL
+            RIVAIS {selectedRivalIds.length + emailsRival.length > 0 && `(${selectedRivalIds.length + emailsRival.length})`}
           </label>
 
           {amigos.length > 0 && (
@@ -312,34 +345,59 @@ function NovoDesafioModal({ open, onClose, user, userProfile }) {
                 <motion.div
                   key={a.id}
                   whileTap={{ scale: 0.98 }}
-                  onClick={() => { setSelectedRivalId(a.id); setEmailRival('') }}
+                  onClick={() => toggleRival(a.id)}
                   className="card"
                   style={{
                     display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
                     padding: '10px 12px',
                     border: '1px solid',
-                    borderColor: selectedRivalId === a.id ? 'var(--accent)' : 'var(--border)',
-                    background: selectedRivalId === a.id ? 'rgba(255,77,0,0.08)' : 'var(--bg2)',
+                    borderColor: selectedRivalIds.includes(a.id) ? 'var(--accent)' : 'var(--border)',
+                    background: selectedRivalIds.includes(a.id) ? 'rgba(255,77,0,0.08)' : 'var(--bg2)',
                   }}
                 >
                   <Avatar src={a.foto_perfil} nome={a.nome} size={32} />
                   <span style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>{a.nome}</span>
-                  {selectedRivalId === a.id && <span style={{ color: 'var(--accent)', fontSize: 12, fontWeight: 700 }}>Selecionado</span>}
+                  {selectedRivalIds.includes(a.id) && <span style={{ color: 'var(--accent)', fontSize: 12, fontWeight: 700 }}>Selecionado</span>}
                 </motion.div>
               ))}
             </div>
           )}
 
           <p style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 6 }}>
-            {amigos.length > 0 ? 'Ou desafie por e-mail:' : 'Digite o e-mail do rival:'}
+            {amigos.length > 0 ? 'Ou desafie por e-mail (pode adicionar vários):' : 'Digite o e-mail do rival (pode adicionar vários):'}
           </p>
-          <input
-            className="input"
-            type="email"
-            placeholder="rival@email.com"
-            value={emailRival}
-            onChange={e => { setEmailRival(e.target.value); setSelectedRivalId(null) }}
-          />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              className="input"
+              type="email"
+              placeholder="rival@email.com"
+              value={emailRival}
+              onChange={e => setEmailRival(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); adicionarEmail() } }}
+              style={{ flex: 1 }}
+            />
+            <Button variant="secondary" onClick={adicionarEmail}>
+              <Plus size={16} />
+            </Button>
+          </div>
+          {emailsRival.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+              {emailsRival.map(email => (
+                <span
+                  key={email}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '6px 10px', borderRadius: 999, fontSize: 12,
+                    background: 'var(--bg3)', border: '1px solid var(--border)',
+                    color: 'var(--text2)', fontWeight: 600,
+                  }}
+                >
+                  {email}
+                  <X size={12} style={{ cursor: 'pointer' }} onClick={() => removerEmail(email)} />
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         <div>
