@@ -17,7 +17,11 @@ import { db } from './config'
 
 // ── Users ──────────────────────────────────────────────────────────────────
 export function listenUser(uid, cb) {
-  return onSnapshot(doc(db, 'users', uid), snap => cb({ id: snap.id, ...snap.data() }))
+  return onSnapshot(
+    doc(db, 'users', uid),
+    snap => cb({ id: snap.id, ...snap.data() }),
+    err => console.error('listenUser error:', err)
+  )
 }
 
 export async function getUser(uid) {
@@ -59,8 +63,10 @@ export function listenDesafiosDoUsuario(uid, cb) {
     where('participantes', 'array-contains', uid),
     orderBy('criado_em', 'desc')
   )
-  return onSnapshot(q, snap =>
-    cb(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+  return onSnapshot(
+    q,
+    snap => cb(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+    err => console.error('listenDesafiosDoUsuario error:', err)
   )
 }
 
@@ -85,8 +91,10 @@ export async function getDesafio(id) {
 }
 
 export function listenDesafio(id, cb) {
-  return onSnapshot(doc(db, 'desafios', id), snap =>
-    cb(snap.exists() ? { id: snap.id, ...snap.data() } : null)
+  return onSnapshot(
+    doc(db, 'desafios', id),
+    snap => cb(snap.exists() ? { id: snap.id, ...snap.data() } : null),
+    err => console.error('listenDesafio error:', err)
   )
 }
 
@@ -105,8 +113,10 @@ export function listenCheckins(desafioId, cb) {
     collection(db, 'desafios', desafioId, 'checkins'),
     orderBy('criado_em', 'desc')
   )
-  return onSnapshot(q, snap =>
-    cb(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+  return onSnapshot(
+    q,
+    snap => cb(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+    err => console.error('listenCheckins error:', err)
   )
 }
 
@@ -174,8 +184,10 @@ export function listenConvitesRecebidos(email, cb) {
     where('para_email', '==', email),
     where('status', '==', 'pendente')
   )
-  return onSnapshot(q, snap =>
-    cb(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+  return onSnapshot(
+    q,
+    snap => cb(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+    err => console.error('listenConvitesRecebidos error:', err)
   )
 }
 

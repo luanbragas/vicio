@@ -2,13 +2,9 @@ import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Trophy, Medal } from 'lucide-react'
 import { useStore } from '../store/useStore'
-import { listenDesafiosDoUsuario, getUser } from '../firebase/firestore'
-import { MOCK_DESAFIOS, MOCK_RIVAL } from '../mock/data'
+import { listenDesafiosDoUsuario, getUser } from '../supabase/db'
 import FlameIcon from '../components/FlameIcon'
 import Avatar from '../components/Avatar'
-
-const PREVIEW_MODE = true
-const MOCK_USER_PROFILE = { id: 'user-demo', nome: 'Luan', foto_perfil: null, streak_atual: 12 }
 
 export default function Ranking() {
   const { user } = useStore()
@@ -16,21 +12,11 @@ export default function Ranking() {
   const [players, setPlayers] = useState([])
 
   useEffect(() => {
-    if (PREVIEW_MODE) {
-      setDesafios(MOCK_DESAFIOS)
-      const scoreMap = { 'user-demo': 17, 'rival-demo': 15 }
-      setPlayers([
-        { ...MOCK_USER_PROFILE, totalStreak: 17 },
-        { ...MOCK_RIVAL, totalStreak: 15 },
-      ])
-      return
-    }
     if (!user) return
     return listenDesafiosDoUsuario(user.uid, setDesafios)
   }, [user])
 
   useEffect(() => {
-    if (PREVIEW_MODE) return
     if (!desafios.length) return
     const uidSet = new Set()
     desafios

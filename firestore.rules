@@ -18,13 +18,23 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isAuth();
       allow write: if isUser(userId);
+
+      // Permite que outro usuário adicione a si próprio na lista de amigos
+      // (necessário para addAmigo atualizar os dois lados da amizade)
+      allow update: if isAuth() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['amigos']) &&
+        request.resource.data.amigos.hasAll(resource.data.get('amigos', [])) &&
+        request.resource.data.amigos.hasAny([request.auth.uid]);
     }
 
     // Desafios
     match /desafios/{desafioId} {
-      allow read: if isAuth() && isParticipante(desafioId);
+      // Usa resource.data diretamente (em vez de get()) porque em consultas de
+      // lista (array-contains) o Firestore não consegue validar a regra pra
+      // todo o resultado quando ela depende de um get() com id variável.
+      allow read: if isAuth() && request.auth.uid in resource.data.participantes;
       allow create: if isAuth();
-      allow update: if isAuth() && isParticipante(desafioId);
+      allow update: if isAuth() && request.auth.uid in resource.data.participantes;
 
       // Check-ins
       match /checkins/{checkinId} {
@@ -40,7 +50,9 @@ service cloud.firestore {
         resource.data.de == request.auth.uid ||
         resource.data.para_email == request.auth.token.email
       );
-      allow create: if isAuth();
+      allow create: if isAuth() &&
+        request.resource.data.de == request.auth.uid &&
+        request.resource.data.para_email != request.auth.token.email;
       allow update: if isAuth() && resource.data.para_email == request.auth.token.email;
     }
   }

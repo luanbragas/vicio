@@ -19,6 +19,7 @@ export async function loginGoogle() {
 
 export async function loginEmail(email, password) {
   const result = await signInWithEmailAndPassword(auth, email, password)
+  await ensureUserDoc(result.user)
   return result.user
 }
 

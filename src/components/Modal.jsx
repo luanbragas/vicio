@@ -28,7 +28,7 @@ export default function Modal({ open, onClose, title, children, fullscreen }) {
               ...(fullscreen
                 ? { inset: 0, borderRadius: 0, display: 'flex', flexDirection: 'column' }
                 : {
-                  bottom: 0, left: '50%', transform: 'translateX(-50%)',
+                  bottom: 0, left: 0, right: 0, margin: '0 auto',
                   width: '100%', maxWidth: 480,
                   borderRadius: '24px 24px 0 0',
                   maxHeight: '92dvh',

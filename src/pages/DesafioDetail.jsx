@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, CheckCircle2, XCircle, Clock, Camera, Snowflake, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, XCircle, Clock, Camera, Snowflake, AlertTriangle, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useStore } from '../store/useStore'
 import {
@@ -10,18 +10,25 @@ import {
   getUser,
   avaliarCheckin,
   usarStreakFreeze,
-} from '../firebase/firestore'
-import { criarCheckin } from '../firebase/firestore'
-import { uploadCheckinFoto } from '../firebase/storage'
-import { MOCK_DESAFIOS, MOCK_CHECKINS, MOCK_RIVAL } from '../mock/data'
-
-const PREVIEW_MODE = true
+  aceitarDesafio,
+  criarCheckin,
+  deletarDesafio,
+} from '../supabase/db'
+import { uploadCheckinFoto, getAuthDebugInfo } from '../supabase/storage'
 import FlameIcon from '../components/FlameIcon'
 import Avatar from '../components/Avatar'
 import Button from '../components/Button'
 import Modal from '../components/Modal'
 import CameraCapture from '../components/Camera'
 import Timer from '../components/Timer'
+
+function describeError(label, e) {
+  const fields = {}
+  for (const k of ['name', 'message', 'status', 'statusCode', 'code', 'error', 'details', 'hint']) {
+    if (e?.[k] !== undefined) fields[k] = e[k]
+  }
+  return `${label}\n${JSON.stringify(fields, null, 2)}`
+}
 
 export default function DesafioDetail() {
   const { id } = useParams()
@@ -38,22 +45,17 @@ export default function DesafioDetail() {
   const [uploading, setUploading] = useState(false)
   const [motivoReprovacao, setMotivoReprovacao] = useState('')
   const [showFreeze, setShowFreeze] = useState(false)
+  const [errorDetail, setErrorDetail] = useState(null)
+  const [showExcluir, setShowExcluir] = useState(false)
+  const [excluindo, setExcluindo] = useState(false)
 
   useEffect(() => {
-    if (PREVIEW_MODE) {
-      const d = MOCK_DESAFIOS.find(x => x.id === id) || MOCK_DESAFIOS[0]
-      setDesafio(d)
-      setCheckins(MOCK_CHECKINS)
-      setRival(MOCK_RIVAL)
-      return
-    }
     const unsub1 = listenDesafio(id, setDesafio)
     const unsub2 = listenCheckins(id, setCheckins)
     return () => { unsub1(); unsub2() }
   }, [id])
 
   useEffect(() => {
-    if (PREVIEW_MODE) return
     if (!desafio || !user) return
     const rivalUid = desafio.participantes?.find(p => p !== user.uid)
     if (rivalUid) getUser(rivalUid).then(setRival)
@@ -68,8 +70,8 @@ export default function DesafioDetail() {
 
   const fezCheckinHoje = checkins.some(c => {
     if (c.userId !== user?.uid) return false
-    const data = c.criado_em?.toDate?.()
-    if (!data) return false
+    if (!c.criado_em) return false
+    const data = new Date(c.criado_em)
     const hoje = new Date()
     return data.toDateString() === hoje.toDateString()
   })
@@ -77,23 +79,38 @@ export default function DesafioDetail() {
   async function handleEnviarCheckin() {
     if (!timerData || !fotoBlob) return toast.error('Complete o cronômetro e a foto')
     setUploading(true)
+    let fotoUrl
     try {
       const checkinId = `${user.uid}_${Date.now()}`
-      const fotoUrl = await uploadCheckinFoto(id, checkinId, fotoBlob)
-      await criarCheckin(id, {
-        userId: user.uid,
-        foto_url: fotoUrl,
-        horario_inicio: timerData.horario_inicio,
-        horario_fim: timerData.horario_fim,
-        duracao_minutos: timerData.duracao_minutos,
-      })
+      try {
+        fotoUrl = await uploadCheckinFoto(id, checkinId, fotoBlob)
+      } catch (e) {
+        console.error('Erro no upload da foto:', e)
+        const auth = await getAuthDebugInfo()
+        setErrorDetail(`${describeError('Upload da foto', e)}\n\nSessão:\n${JSON.stringify(auth, null, 2)}`)
+        throw new Error(`Upload da foto: ${e.message || e.error_description || 'desconhecido'}`)
+      }
+      try {
+        await criarCheckin(id, {
+          userId: user.uid,
+          foto_url: fotoUrl,
+          horario_inicio: timerData.horario_inicio,
+          horario_fim: timerData.horario_fim,
+          duracao_minutos: timerData.duracao_minutos,
+        })
+      } catch (e) {
+        console.error('Erro ao salvar check-in:', e)
+        const auth = await getAuthDebugInfo()
+        setErrorDetail(`${describeError('Salvar check-in', e)}\n\nSessão:\n${JSON.stringify(auth, null, 2)}`)
+        throw new Error(`Salvar check-in: ${e.message || e.error_description || 'desconhecido'}`)
+      }
       toast.success('Check-in enviado! Aguardando aprovação.')
       setShowCheckin(false)
       setTimerData(null)
       setFotoBlob(null)
       setCheckinStep('timer')
     } catch (e) {
-      toast.error('Erro ao enviar check-in')
+      toast.error(e.message || 'Erro ao enviar check-in')
     } finally {
       setUploading(false)
     }
@@ -113,6 +130,15 @@ export default function DesafioDetail() {
     }
   }
 
+  async function handleAceitarDesafio() {
+    try {
+      await aceitarDesafio(id, user.uid)
+      toast.success('Desafio aceito!')
+    } catch {
+      toast.error('Erro ao aceitar desafio')
+    }
+  }
+
   async function handleFreeze() {
     try {
       await usarStreakFreeze(id, user.uid)
@@ -120,6 +146,18 @@ export default function DesafioDetail() {
       setShowFreeze(false)
     } catch (e) {
       toast.error(e.message || 'Erro ao usar freeze')
+    }
+  }
+
+  async function handleExcluir() {
+    setExcluindo(true)
+    try {
+      await deletarDesafio(id)
+      toast.success('Desafio excluído')
+      navigate('/desafios')
+    } catch {
+      toast.error('Erro ao excluir desafio')
+      setExcluindo(false)
     }
   }
 
@@ -147,6 +185,17 @@ export default function DesafioDetail() {
               <ArrowLeft size={18} />
             </motion.button>
             <h1 style={{ fontSize: 20, fontWeight: 900, flex: 1 }}>{desafio.titulo}</h1>
+            <motion.button
+              whileTap={{ scale: 0.85 }}
+              onClick={() => setShowExcluir(true)}
+              style={{
+                width: 36, height: 36, borderRadius: '50%',
+                background: 'rgba(239,68,68,0.1)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <Trash2 size={16} color="var(--red)" />
+            </motion.button>
           </div>
 
           {/* VS Card */}
@@ -177,6 +226,21 @@ export default function DesafioDetail() {
 
         {/* Actions */}
         <div style={{ padding: '16px 20px', display: 'flex', gap: 10 }}>
+          {desafio.status === 'pendente' && !desafio.aceitos?.includes(user?.uid) && (
+            <Button fullWidth onClick={handleAceitarDesafio} size="lg">
+              <CheckCircle2 size={18} /> Aceitar Desafio
+            </Button>
+          )}
+          {desafio.status === 'pendente' && desafio.aceitos?.includes(user?.uid) && (
+            <div style={{
+              flex: 1, padding: '16px', borderRadius: 12,
+              background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)',
+              textAlign: 'center', color: 'var(--yellow)', fontWeight: 700, fontSize: 14,
+            }}>
+              <Clock size={18} style={{ marginRight: 8, verticalAlign: 'middle' }} />
+              Aguardando o rival aceitar...
+            </div>
+          )}
           {!fezCheckinHoje && desafio.status === 'ativo' && (
             <Button
               fullWidth
@@ -369,6 +433,47 @@ export default function DesafioDetail() {
           </Button>
         </div>
       </Modal>
+
+      {/* Modal Excluir */}
+      <Modal open={showExcluir} onClose={() => setShowExcluir(false)} title="Excluir desafio">
+        <div style={{ textAlign: 'center' }}>
+          <Trash2 size={40} color="var(--red)" style={{ marginBottom: 16 }} />
+          <p style={{ color: 'var(--text2)', marginBottom: 24 }}>
+            Tem certeza que deseja excluir <strong>{desafio.titulo}</strong>?
+            Essa ação não pode ser desfeita.
+          </p>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <Button variant="ghost" fullWidth onClick={() => setShowExcluir(false)}>
+              Cancelar
+            </Button>
+            <Button variant="danger" fullWidth onClick={handleExcluir} loading={excluindo}>
+              Excluir
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal Detalhe do Erro */}
+      <Modal open={!!errorDetail} onClose={() => setErrorDetail(null)} title="Detalhe do erro">
+        <pre style={{
+          whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+          fontSize: 12, background: 'var(--bg3)', padding: 12, borderRadius: 8,
+          maxHeight: '50vh', overflowY: 'auto',
+        }}>{errorDetail}</pre>
+        <Button
+          fullWidth
+          variant="secondary"
+          style={{ marginTop: 12 }}
+          onClick={() => {
+            navigator.clipboard?.writeText(errorDetail).then(
+              () => toast.success('Copiado!'),
+              () => toast.error('Não foi possível copiar')
+            )
+          }}
+        >
+          Copiar
+        </Button>
+      </Modal>
     </div>
   )
 }
@@ -398,8 +503,8 @@ function CheckinItem({ checkin, uid, rival, index }) {
     pendente: <Clock size={14} color="var(--yellow)" />,
   }
 
-  const dataStr = checkin.criado_em?.toDate?.()
-    ? new Date(checkin.criado_em.toDate()).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+  const dataStr = checkin.criado_em
+    ? new Date(checkin.criado_em).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
     : ''
 
   return (

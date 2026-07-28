@@ -1,22 +1,21 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, Swords, X } from 'lucide-react'
+import { Plus, Swords, X, Trash2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { useStore } from '../store/useStore'
 import {
   listenDesafiosDoUsuario,
   criarDesafio,
+  aceitarDesafio,
+  deletarDesafio,
   getUserByEmail,
   getUser,
-} from '../firebase/firestore'
-import { MOCK_DESAFIOS, MOCK_RIVAL } from '../mock/data'
+} from '../supabase/db'
 import Button from '../components/Button'
 import Modal from '../components/Modal'
 import FlameIcon from '../components/FlameIcon'
 import Avatar from '../components/Avatar'
-
-const PREVIEW_MODE = true
 
 const HABITOS_SUGERIDOS = [
   '📚 Estudar', '🏋️ Treinar', '📖 Ler', '🧘 Meditar',
@@ -29,16 +28,16 @@ export default function Desafios() {
   const [desafios, setDesafios] = useState([])
   const [showNovo, setShowNovo] = useState(false)
   const [amigosInfo, setAmigosInfo] = useState({})
+  const [desafioParaExcluir, setDesafioParaExcluir] = useState(null)
+  const [excluindo, setExcluindo] = useState(false)
 
   useEffect(() => {
-    if (PREVIEW_MODE) { setDesafios(MOCK_DESAFIOS); setAmigosInfo({ 'rival-demo': MOCK_RIVAL }); return }
     if (!user) return
     return listenDesafiosDoUsuario(user.uid, setDesafios)
   }, [user])
 
   // Load amigos info
   useEffect(() => {
-    if (PREVIEW_MODE) return
     if (!desafios.length) return
     const uids = [...new Set(
       desafios.flatMap(d => d.participantes || []).filter(uid => uid !== user?.uid)
@@ -53,6 +52,29 @@ export default function Desafios() {
   const ativos = desafios.filter(d => d.status === 'ativo')
   const pendentes = desafios.filter(d => d.status === 'pendente')
   const encerrados = desafios.filter(d => d.status === 'encerrado')
+
+  async function handleAceitar(id) {
+    try {
+      await aceitarDesafio(id, user.uid)
+      toast.success('Desafio aceito!')
+    } catch {
+      toast.error('Erro ao aceitar desafio')
+    }
+  }
+
+  async function handleExcluir() {
+    if (!desafioParaExcluir) return
+    setExcluindo(true)
+    try {
+      await deletarDesafio(desafioParaExcluir.id)
+      toast.success('Desafio excluído')
+      setDesafioParaExcluir(null)
+    } catch {
+      toast.error('Erro ao excluir desafio')
+    } finally {
+      setExcluindo(false)
+    }
+  }
 
   return (
     <div className="page">
@@ -111,13 +133,36 @@ export default function Desafios() {
                           vs {rival?.nome || 'Rival'}
                         </p>
                       </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
-                          <span style={{ fontSize: 22, fontWeight: 900 }} className="gradient-text">{myStreak}</span>
-                          <FlameIcon streak={myStreak} size={18} animate={false} />
+                      {d.status === 'pendente' && !d.aceitos?.includes(user?.uid) ? (
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={e => { e.stopPropagation(); handleAceitar(d.id) }}
+                        >
+                          Aceitar
+                        </Button>
+                      ) : d.status === 'pendente' ? (
+                        <span style={{ fontSize: 12, color: 'var(--yellow)' }}>Aguardando...</span>
+                      ) : (
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
+                            <span style={{ fontSize: 22, fontWeight: 900 }} className="gradient-text">{myStreak}</span>
+                            <FlameIcon streak={myStreak} size={18} animate={false} />
+                          </div>
+                          <p style={{ fontSize: 11, color: 'var(--text3)' }}>streak</p>
                         </div>
-                        <p style={{ fontSize: 11, color: 'var(--text3)' }}>streak</p>
-                      </div>
+                      )}
+                      <motion.button
+                        whileTap={{ scale: 0.85 }}
+                        onClick={e => { e.stopPropagation(); setDesafioParaExcluir(d) }}
+                        style={{
+                          width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+                          background: 'rgba(239,68,68,0.1)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}
+                      >
+                        <Trash2 size={15} color="var(--red)" />
+                      </motion.button>
                     </div>
                   </motion.div>
                 )
@@ -148,29 +193,65 @@ export default function Desafios() {
         user={user}
         userProfile={userProfile}
       />
+
+      <Modal
+        open={!!desafioParaExcluir}
+        onClose={() => setDesafioParaExcluir(null)}
+        title="Excluir desafio"
+      >
+        <div style={{ textAlign: 'center' }}>
+          <Trash2 size={40} color="var(--red)" style={{ marginBottom: 16 }} />
+          <p style={{ color: 'var(--text2)', marginBottom: 24 }}>
+            Tem certeza que deseja excluir <strong>{desafioParaExcluir?.titulo}</strong>?
+            Essa ação não pode ser desfeita.
+          </p>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <Button variant="ghost" fullWidth onClick={() => setDesafioParaExcluir(null)}>
+              Cancelar
+            </Button>
+            <Button variant="danger" fullWidth onClick={handleExcluir} loading={excluindo}>
+              Excluir
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }
 
 function NovoDesafioModal({ open, onClose, user, userProfile }) {
   const [titulo, setTitulo] = useState('')
+  const [amigos, setAmigos] = useState([])
+  const [selectedRivalId, setSelectedRivalId] = useState(null)
   const [emailRival, setEmailRival] = useState('')
   const [duracao, setDuracao] = useState(30)
   const [aposta, setAposta] = useState('')
   const [loading, setLoading] = useState(false)
 
+  useEffect(() => {
+    if (!open || !userProfile?.amigos?.length) { setAmigos([]); return }
+    const uids = userProfile.amigos.filter(uid => uid !== user.uid)
+    Promise.all(uids.map(uid => getUser(uid))).then(users => {
+      setAmigos(users.filter(Boolean))
+    })
+  }, [open, userProfile])
+
   async function handleCriar() {
     if (!titulo.trim()) return toast.error('Digite o título do desafio')
-    if (!emailRival.trim()) return toast.error('Digite o e-mail do rival')
+    if (!selectedRivalId && !emailRival.trim()) return toast.error('Escolha um amigo ou digite um e-mail')
     setLoading(true)
     try {
-      const rival = await getUserByEmail(emailRival.trim().toLowerCase())
-      if (!rival) return toast.error('Usuário não encontrado')
-      if (rival.id === user.uid) return toast.error('Não pode desafiar a si mesmo')
+      let rivalId = selectedRivalId
+      if (!rivalId) {
+        const rival = await getUserByEmail(emailRival.trim().toLowerCase())
+        if (!rival) return toast.error('Usuário não encontrado')
+        if (rival.id === user.uid) return toast.error('Não pode desafiar a si mesmo')
+        rivalId = rival.id
+      }
 
       await criarDesafio({
         titulo: titulo.trim(),
-        participantes: [user.uid, rival.id],
+        participantes: [user.uid, rivalId],
         criado_por: user.uid,
         aceitos: [user.uid],
         duracao_dias: duracao === 0 ? null : duracao,
@@ -178,7 +259,7 @@ function NovoDesafioModal({ open, onClose, user, userProfile }) {
       })
       toast.success('Desafio criado! Aguardando o rival aceitar.')
       onClose()
-      setTitulo(''); setEmailRival(''); setAposta('')
+      setTitulo(''); setSelectedRivalId(null); setEmailRival(''); setAposta('')
     } catch (e) {
       toast.error('Erro ao criar desafio')
     } finally {
@@ -222,14 +303,42 @@ function NovoDesafioModal({ open, onClose, user, userProfile }) {
 
         <div>
           <label style={{ fontSize: 12, color: 'var(--text3)', fontWeight: 600, marginBottom: 8, display: 'block' }}>
-            E-MAIL DO RIVAL
+            RIVAL
           </label>
+
+          {amigos.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+              {amigos.map(a => (
+                <motion.div
+                  key={a.id}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => { setSelectedRivalId(a.id); setEmailRival('') }}
+                  className="card"
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
+                    padding: '10px 12px',
+                    border: '1px solid',
+                    borderColor: selectedRivalId === a.id ? 'var(--accent)' : 'var(--border)',
+                    background: selectedRivalId === a.id ? 'rgba(255,77,0,0.08)' : 'var(--bg2)',
+                  }}
+                >
+                  <Avatar src={a.foto_perfil} nome={a.nome} size={32} />
+                  <span style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>{a.nome}</span>
+                  {selectedRivalId === a.id && <span style={{ color: 'var(--accent)', fontSize: 12, fontWeight: 700 }}>Selecionado</span>}
+                </motion.div>
+              ))}
+            </div>
+          )}
+
+          <p style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 6 }}>
+            {amigos.length > 0 ? 'Ou desafie por e-mail:' : 'Digite o e-mail do rival:'}
+          </p>
           <input
             className="input"
             type="email"
             placeholder="rival@email.com"
             value={emailRival}
-            onChange={e => setEmailRival(e.target.value)}
+            onChange={e => { setEmailRival(e.target.value); setSelectedRivalId(null) }}
           />
         </div>
 

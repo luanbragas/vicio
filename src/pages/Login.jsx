@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Mail, Lock, User, Flame } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { loginGoogle, loginEmail, registerEmail } from '../firebase/auth'
+import { loginGoogle, loginEmail, registerEmail } from '../supabase/auth'
 import Button from '../components/Button'
 import FlameIcon from '../components/FlameIcon'
 
@@ -35,14 +35,14 @@ export default function Login() {
         await registerEmail(email, senha, nome)
       }
     } catch (err) {
-      const msg = {
-        'auth/user-not-found': 'Usuário não encontrado',
-        'auth/wrong-password': 'Senha incorreta',
-        'auth/email-already-in-use': 'E-mail já cadastrado',
-        'auth/weak-password': 'Senha muito fraca (mín. 6 caracteres)',
-        'auth/invalid-email': 'E-mail inválido',
-      }[err.code] || 'Ocorreu um erro'
-      toast.error(msg)
+      const map = [
+        [/invalid login credentials/i, 'E-mail ou senha incorretos'],
+        [/user already registered/i, 'E-mail já cadastrado'],
+        [/password should be at least/i, 'Senha muito fraca (mín. 6 caracteres)'],
+        [/unable to validate email/i, 'E-mail inválido'],
+      ]
+      const found = map.find(([re]) => re.test(err.message || ''))
+      toast.error(found ? found[1] : 'Ocorreu um erro')
     } finally {
       setLoading(false)
     }

@@ -4,14 +4,11 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Bell, CheckCircle2, Clock, XCircle, UserPlus } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useStore } from '../store/useStore'
-import { listenDesafiosDoUsuario, aceitarDesafio, listenConvitesRecebidos, aceitarConvite, criarConvite } from '../firebase/firestore'
-import { MOCK_DESAFIOS } from '../mock/data'
+import { listenDesafiosDoUsuario, aceitarDesafio, listenConvitesRecebidos, aceitarConvite, criarConvite } from '../supabase/db'
 import FlameIcon from '../components/FlameIcon'
 import Avatar from '../components/Avatar'
 import Button from '../components/Button'
 import Modal from '../components/Modal'
-
-const PREVIEW_MODE = true
 
 const STATUS_ICON = {
   aprovado: <CheckCircle2 size={14} color="var(--green)" />,
@@ -29,7 +26,6 @@ export default function Home() {
   const [loadingAmigo, setLoadingAmigo] = useState(false)
 
   useEffect(() => {
-    if (PREVIEW_MODE) { setDesafios(MOCK_DESAFIOS); return }
     if (!user) return
     const unsub1 = listenDesafiosDoUsuario(user.uid, setDesafios)
     const unsub2 = listenConvitesRecebidos(user.email, setConvites)
@@ -47,9 +43,13 @@ export default function Home() {
 
   async function handleEnviarConviteAmigo() {
     if (!emailAmigo.trim()) return
+    const email = emailAmigo.trim().toLowerCase()
+    if (email === user.email.toLowerCase()) {
+      return toast.error('Você não pode adicionar a si mesmo como amigo')
+    }
     setLoadingAmigo(true)
     try {
-      await criarConvite(user.uid, emailAmigo.trim().toLowerCase())
+      await criarConvite(user.uid, email)
       toast.success('Convite enviado!')
       setEmailAmigo('')
       setShowAmigo(false)

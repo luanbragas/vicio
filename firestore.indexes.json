@@ -9,13 +9,6 @@
       ]
     },
     {
-      "collectionGroup": "checkins",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "criado_em", "order": "DESCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "convites",
       "queryScope": "COLLECTION",
       "fields": [

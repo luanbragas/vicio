@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState } from 'react'
-import { Camera, RefreshCcw, Check } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { Camera, RefreshCcw } from 'lucide-react'
 import { motion } from 'framer-motion'
 import Button from './Button'
 
@@ -7,7 +8,6 @@ export default function CameraCapture({ onCapture, onCancel }) {
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
   const streamRef = useRef(null)
-  const [preview, setPreview] = useState(null)
   const [facingMode, setFacingMode] = useState('environment')
   const [error, setError] = useState(null)
 
@@ -15,19 +15,30 @@ export default function CameraCapture({ onCapture, onCancel }) {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(t => t.stop())
     }
+    let stream
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: mode, width: { ideal: 1280 }, height: { ideal: 720 } },
         audio: false,
       })
-      streamRef.current = stream
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        await videoRef.current.play()
-      }
-      setError(null)
     } catch (e) {
-      setError('Câmera não disponível. Verifique as permissões.')
+      setError(`${e.name || 'Erro'}: ${e.message || 'câmera não disponível'}`)
+      return
+    }
+
+    streamRef.current = stream
+    setError(null)
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream
+      try {
+        await videoRef.current.play()
+      } catch (e) {
+        // play() pode ser interrompido por uma corrida (comum no iOS logo após
+        // conceder a permissão) mesmo com o stream já corretamente anexado —
+        // não trata como falha da câmera.
+        console.error('video.play() falhou:', e)
+      }
     }
   }
 
@@ -45,41 +56,34 @@ export default function CameraCapture({ onCapture, onCancel }) {
     canvas.getContext('2d').drawImage(video, 0, 0)
     canvas.toBlob(blob => {
       if (blob) {
-        setPreview(URL.createObjectURL(blob))
         streamRef.current?.getTracks().forEach(t => t.stop())
         onCapture(blob)
       }
     }, 'image/jpeg', 0.85)
   }
 
-  function retake() {
-    setPreview(null)
-    startCamera(facingMode)
-  }
-
-  return (
+  return createPortal(
     <div style={{
       position: 'fixed', inset: 0, zIndex: 300,
       background: '#000',
       display: 'flex', flexDirection: 'column',
+      minHeight: 0,
     }}>
       {error && (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-          <p style={{ color: 'var(--text2)', textAlign: 'center' }}>{error}</p>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, gap: 16, minHeight: 0 }}>
+          <p style={{ color: '#fff', fontSize: 16, fontWeight: 700, textAlign: 'center' }}>Não consegui abrir a câmera</p>
+          <p style={{ color: 'var(--text2)', textAlign: 'center', fontSize: 13 }}>{error}</p>
+          <Button variant="secondary" size="sm" onClick={() => startCamera(facingMode)}>Tentar novamente</Button>
         </div>
       )}
 
-      {!error && !preview && (
+      {!error && (
         <video
           ref={videoRef}
           playsInline
           muted
-          style={{ flex: 1, objectFit: 'cover', width: '100%' }}
+          style={{ flex: 1, minHeight: 0, minWidth: 0, objectFit: 'cover', width: '100%' }}
         />
-      )}
-
-      {preview && (
-        <img src={preview} alt="preview" style={{ flex: 1, objectFit: 'cover', width: '100%' }} />
       )}
 
       <canvas ref={canvasRef} style={{ display: 'none' }} />
@@ -91,48 +95,37 @@ export default function CameraCapture({ onCapture, onCancel }) {
         alignItems: 'center',
         justifyContent: 'space-around',
         gap: 16,
+        flexShrink: 0,
       }}>
-        {!preview ? (
-          <>
-            <Button variant="ghost" onClick={onCancel} size="sm">Cancelar</Button>
+        <Button variant="ghost" onClick={onCancel} size="sm">Cancelar</Button>
 
-            <motion.button
-              whileTap={{ scale: 0.9 }}
-              onClick={capture}
-              style={{
-                width: 72, height: 72, borderRadius: '50%',
-                background: 'linear-gradient(135deg, var(--accent), var(--accent2))',
-                boxShadow: '0 0 24px var(--accent-glow)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                border: '4px solid rgba(255,255,255,0.2)',
-              }}
-            >
-              <Camera size={28} color="#fff" />
-            </motion.button>
+        <motion.button
+          whileTap={{ scale: 0.9 }}
+          onClick={capture}
+          style={{
+            width: 72, height: 72, borderRadius: '50%',
+            background: 'linear-gradient(135deg, var(--accent), var(--accent2))',
+            boxShadow: '0 0 24px var(--accent-glow)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            border: '4px solid rgba(255,255,255,0.2)',
+          }}
+        >
+          <Camera size={28} color="#fff" />
+        </motion.button>
 
-            <motion.button
-              whileTap={{ scale: 0.85 }}
-              onClick={() => setFacingMode(m => m === 'environment' ? 'user' : 'environment')}
-              style={{
-                width: 44, height: 44, borderRadius: '50%',
-                background: 'rgba(255,255,255,0.1)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}
-            >
-              <RefreshCcw size={18} color="#fff" />
-            </motion.button>
-          </>
-        ) : (
-          <>
-            <Button variant="ghost" onClick={retake} size="sm">
-              <RefreshCcw size={16} /> Repetir
-            </Button>
-            <Button variant="success" onClick={() => {}} size="sm">
-              <Check size={16} /> Usar foto
-            </Button>
-          </>
-        )}
+        <motion.button
+          whileTap={{ scale: 0.85 }}
+          onClick={() => setFacingMode(m => m === 'environment' ? 'user' : 'environment')}
+          style={{
+            width: 44, height: 44, borderRadius: '50%',
+            background: 'rgba(255,255,255,0.1)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <RefreshCcw size={18} color="#fff" />
+        </motion.button>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

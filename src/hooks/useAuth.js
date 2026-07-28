@@ -1,31 +1,39 @@
 import { useEffect } from 'react'
-import { onAuthStateChanged } from 'firebase/auth'
-import { auth } from '../firebase/config'
-import { listenUser } from '../firebase/firestore'
+import { supabase } from '../supabase/config'
+import { listenUser } from '../supabase/db'
 import { useStore } from '../store/useStore'
-import { PREVIEW_MODE } from '../App'
+
+function withUid(user) {
+  return user ? { ...user, uid: user.id } : null
+}
 
 export function useAuth() {
   const { user, userProfile, setUser, setUserProfile } = useStore()
 
   useEffect(() => {
-    // Em preview, o App.jsx já injeta o mock — não conectar no Firebase
-    if (PREVIEW_MODE) return
-
     let unsubProfile = null
 
-    const unsubAuth = onAuthStateChanged(auth, (firebaseUser) => {
-      setUser(firebaseUser ?? null)
-      if (unsubProfile) unsubProfile()
-      if (firebaseUser) {
-        unsubProfile = listenUser(firebaseUser.uid, setUserProfile)
+    function handleUser(sessionUser) {
+      setUser(withUid(sessionUser))
+      if (unsubProfile) {
+        unsubProfile()
+        unsubProfile = null
+      }
+      if (sessionUser) {
+        unsubProfile = listenUser(sessionUser.id, setUserProfile)
       } else {
         setUserProfile(null)
       }
+    }
+
+    supabase.auth.getSession().then(({ data }) => handleUser(data.session?.user ?? null))
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleUser(session?.user ?? null)
     })
 
     return () => {
-      unsubAuth()
+      subscription.unsubscribe()
       if (unsubProfile) unsubProfile()
     }
   }, [])

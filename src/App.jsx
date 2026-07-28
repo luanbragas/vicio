@@ -1,9 +1,7 @@
-import { useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Toaster } from 'react-hot-toast'
 import { useAuth } from './hooks/useAuth'
-import { useStore } from './store/useStore'
 import LoadingScreen from './components/LoadingScreen'
 import BottomNav from './components/BottomNav'
 import Login from './pages/Login'
@@ -12,15 +10,6 @@ import Desafios from './pages/Desafios'
 import DesafioDetail from './pages/DesafioDetail'
 import Ranking from './pages/Ranking'
 import Perfil from './pages/Perfil'
-
-export const PREVIEW_MODE = true
-
-export const MOCK_USER = { uid: 'user-demo', email: 'demo@strike.com', displayName: 'Luan' }
-export const MOCK_PROFILE = {
-  id: 'user-demo', nome: 'Luan', email: 'demo@strike.com',
-  foto_perfil: null, amigos: ['rival-demo'],
-  streak_atual: 12, total_checkins: 47, taxa_aprovacao: 94,
-}
 
 const pageVariants = {
   initial: { opacity: 0, y: 8 },
@@ -41,21 +30,10 @@ function PageWrapper({ children }) {
 
 export default function App() {
   const { user } = useAuth()
-  const { setUser, setUserProfile } = useStore()
 
-  useEffect(() => {
-    if (PREVIEW_MODE) {
-      setUser(MOCK_USER)
-      setUserProfile(MOCK_PROFILE)
-    }
-  }, [])
+  if (user === undefined) return <LoadingScreen />
 
-  // Em preview, ignora o estado do Firebase e usa o mock direto
-  const effectiveUser = PREVIEW_MODE ? MOCK_USER : user
-
-  if (effectiveUser === undefined) return <LoadingScreen />
-
-  if (!effectiveUser) {
+  if (!user) {
     return (
       <>
         <Toaster position="top-center" toastOptions={{ style: { background: '#1a1a1a', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' } }} />
