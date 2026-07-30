@@ -2,9 +2,11 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Toaster } from 'react-hot-toast'
 import { useAuth } from './hooks/useAuth'
+import { useStore } from './store/useStore'
 import LoadingScreen from './components/LoadingScreen'
 import BottomNav from './components/BottomNav'
 import Login from './pages/Login'
+import ResetPassword from './pages/ResetPassword'
 import Home from './pages/Home'
 import Desafios from './pages/Desafios'
 import DesafioDetail from './pages/DesafioDetail'
@@ -30,8 +32,18 @@ function PageWrapper({ children }) {
 
 export default function App() {
   const { user } = useAuth()
+  const passwordRecovery = useStore(s => s.passwordRecovery)
 
   if (user === undefined) return <LoadingScreen />
+
+  if (passwordRecovery) {
+    return (
+      <>
+        <Toaster position="top-center" toastOptions={{ style: { background: '#1a1a1a', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' } }} />
+        <ResetPassword />
+      </>
+    )
+  }
 
   if (!user) {
     return (

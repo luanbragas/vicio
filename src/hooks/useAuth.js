@@ -8,7 +8,7 @@ function withUid(user) {
 }
 
 export function useAuth() {
-  const { user, userProfile, setUser, setUserProfile } = useStore()
+  const { user, userProfile, setUser, setUserProfile, setPasswordRecovery } = useStore()
 
   useEffect(() => {
     let unsubProfile = null
@@ -28,7 +28,11 @@ export function useAuth() {
 
     supabase.auth.getSession().then(({ data }) => handleUser(data.session?.user ?? null))
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setPasswordRecovery(true)
+        return
+      }
       handleUser(session?.user ?? null)
     })
 

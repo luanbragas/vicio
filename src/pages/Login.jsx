@@ -2,9 +2,10 @@ import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Mail, Lock, User, Flame } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { loginGoogle, loginEmail, registerEmail } from '../supabase/auth'
+import { loginGoogle, loginEmail, registerEmail, resetPassword } from '../supabase/auth'
 import Button from '../components/Button'
 import FlameIcon from '../components/FlameIcon'
+import Modal from '../components/Modal'
 
 export default function Login() {
   const [mode, setMode] = useState('login') // 'login' | 'register'
@@ -12,6 +13,25 @@ export default function Login() {
   const [senha, setSenha] = useState('')
   const [nome, setNome] = useState('')
   const [loading, setLoading] = useState(false)
+  const [showForgot, setShowForgot] = useState(false)
+  const [forgotEmail, setForgotEmail] = useState('')
+  const [forgotLoading, setForgotLoading] = useState(false)
+
+  async function handleForgot(e) {
+    e.preventDefault()
+    if (!forgotEmail.trim()) return toast.error('Digite seu e-mail')
+    setForgotLoading(true)
+    try {
+      await resetPassword(forgotEmail.trim())
+      toast.success('Enviamos um link para redefinir sua senha')
+      setShowForgot(false)
+      setForgotEmail('')
+    } catch (err) {
+      toast.error('Não foi possível enviar o link')
+    } finally {
+      setForgotLoading(false)
+    }
+  }
 
   async function handleGoogle() {
     setLoading(true)
@@ -131,6 +151,19 @@ export default function Login() {
           </Button>
         </form>
 
+        {mode === 'login' && (
+          <button
+            onClick={() => setShowForgot(true)}
+            style={{
+              width: '100%', marginTop: 12, padding: 4,
+              background: 'transparent', color: 'var(--text3)',
+              fontSize: 13, fontWeight: 500, textAlign: 'center',
+            }}
+          >
+            Esqueceu a senha?
+          </button>
+        )}
+
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '20px 0' }}>
           <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
           <span style={{ color: 'var(--text3)', fontSize: 12 }}>ou</span>
@@ -160,6 +193,29 @@ export default function Login() {
             : 'Já tem conta? Entrar'}
         </button>
       </motion.div>
+
+      <Modal open={showForgot} onClose={() => setShowForgot(false)} title="Redefinir senha">
+        <form onSubmit={handleForgot} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <p style={{ color: 'var(--text2)', fontSize: 14 }}>
+            Digite seu e-mail e enviaremos um link para você criar uma nova senha.
+          </p>
+          <div style={{ position: 'relative' }}>
+            <Mail size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)' }} />
+            <input
+              className="input"
+              type="email"
+              placeholder="E-mail"
+              value={forgotEmail}
+              onChange={e => setForgotEmail(e.target.value)}
+              required
+              style={{ paddingLeft: 40 }}
+            />
+          </div>
+          <Button type="submit" fullWidth loading={forgotLoading} size="lg">
+            Enviar link
+          </Button>
+        </form>
+      </Modal>
     </div>
   )
 }
